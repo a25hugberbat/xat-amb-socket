@@ -5,29 +5,45 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server, {
-  connectionStateRecovery: {}
-});
+const io = new Server(server);
 
-app.get('/', (req, res) => {
-  res.sendFile(join(__dirname, 'public/index.html'));
-});
+const MAX_NOM = 20;
+const MAX_TEXT = 500;
+
+// Express sirve los archivos de la carpeta "public"
+app.use(express.static(join(__dirname, 'public')));
+
+// Devuelve el texto sin espacios a los lados, o null si no es válido
+function validar(valor, maxim) {
+  if (typeof valor !== 'string') {
+    return null;
+  }
+  const net = valor.trim();
+  if (net.length === 0 || net.length > maxim) {
+    return null;
+  }
+  return net;
+}
 
 io.on('connection', (socket) => {
-    if (socket.recovered) {
-        console.log(`*A user has reconnected*`);
-    } else {
-        console.log(`*A user has connected*`);
-        io.emit('chat message', '*Un usuario se ha conectado*');
+  socket.on('chat:send', (dades) => {
+    if (typeof dades !== 'object' || dades === null) {
+      return;
     }
 
-  socket.on('chat message', (msg) => {
-    io.emit('chat message', msg);
-  });
+    const nom = validar(dades.nom, MAX_NOM);
+    const text = validar(dades.text, MAX_TEXT);
 
-  socket.on('disconnect', () => {
-    console.log(`*user disconnected*`);
-    io.emit('chat message', `*Un usuario se ha desconectado*`);
+    if (nom === null || text === null) {
+      return;
+    }
+
+    // La hora la genera el servidor
+    io.emit('chat:message', {
+      nom: nom,
+      text: text,
+      hora: new Date().toISOString()
+    });
   });
 });
 

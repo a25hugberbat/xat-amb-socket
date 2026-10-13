@@ -1,94 +1,133 @@
 <!DOCTYPE html>
-<html>
+<html lang="ca">
   <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <title>Socket.IO chat</title>
-    <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-
-      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-      #input:focus { outline: none; }
-      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
-
-      #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem 1rem; }
-      #messages > li:nth-child(odd) { background: #efefef; }
-      #messages > li.aviso { color: #777; font-style: italic; }
-    </style>
+    <title>Xat amb Socket.IO</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   </head>
-  <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-      <input id="input" autocomplete="off" />
-      <button>Send</button>
-      <button type="button" id="toggle-btn">Desconectar</button>
-    </form>
+  <body class="bg-light">
+    <!-- 1. Entrada al xat -->
+    <section id="entrada" class="container mt-5" style="max-width: 400px;">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <form id="form-nom">
+            <input id="nom" class="form-control" autocomplete="off" maxlength="20" placeholder="El teu nom" />
+            <div id="error-nom" class="text-danger small mt-1"></div>
+            <button class="btn btn-dark w-100 mt-2">Entrar</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Interfície del xat -->
+    <section id="xat" class="container my-4 d-none" style="max-width: 700px;">
+      <div class="card shadow-sm">
+        <header class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+          <h1 class="h5 mb-0">Xat amb Socket.IO</h1>
+          <span id="nom-actual" class="fw-bold"></span>
+          <span id="estat" class="badge bg-danger">Desconnectat</span>
+        </header>
+
+        <!-- Altura limitada + scroll vertical -->
+        <ul id="missatges" class="list-group list-group-flush overflow-auto" style="height: 60vh;"></ul>
+
+        <div class="card-footer">
+          <form id="form" class="d-flex gap-2">
+            <input id="input" class="form-control" autocomplete="off" maxlength="500" />
+            <button id="enviar" class="btn btn-dark" disabled>Enviar</button>
+          </form>
+        </div>
+      </div>
+    </section>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      // reconnection: false -> no se reconecta solo, lo hacemos con el botón
-      const socket = io({
-        reconnection: false
-      });
+      const socket = io();
+      let nom = '';
 
+      const entrada = document.getElementById('entrada');
+      const formNom = document.getElementById('form-nom');
+      const inputNom = document.getElementById('nom');
+      const errorNom = document.getElementById('error-nom');
+      const xat = document.getElementById('xat');
+      const nomActual = document.getElementById('nom-actual');
+      const estat = document.getElementById('estat');
+      const missatges = document.getElementById('missatges');
       const form = document.getElementById('form');
       const input = document.getElementById('input');
-      const messages = document.getElementById('messages');
-      const toggleButton = document.getElementById('toggle-btn');
+      const enviar = document.getElementById('enviar');
 
-      function mostrar(texto, esAviso) {
-        const item = document.createElement('li');
-        item.textContent = texto;
-        if (esAviso) {
-          item.classList.add('aviso');
+      // 1. Entrada
+      formNom.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const valor = inputNom.value.trim();
+
+        if (valor.length === 0 || valor.length > 20) {
+          errorNom.textContent = 'El nom ha de tenir entre 1 i 20 caràcters';
+          return;
         }
-        messages.appendChild(item);
-        window.scrollTo(0, document.body.scrollHeight);
+
+        nom = valor;
+        nomActual.textContent = nom;
+        entrada.classList.add('d-none');
+        xat.classList.remove('d-none');
+      });
+
+      // 4. Estat de connexió
+      function actualitzarEstat() {
+        if (socket.connected) {
+          estat.textContent = 'Connectat';
+          estat.className = 'badge bg-success';
+          enviar.disabled = false;
+        } else {
+          estat.textContent = 'Desconnectat';
+          estat.className = 'badge bg-danger';
+          enviar.disabled = true;
+        }
       }
 
-      toggleButton.addEventListener('click', () => {
-        if (socket.connected) {
-          // Simulamos un corte de red (NO una despedida voluntaria)
-          socket.io.engine.close();
-        } else {
-          // Volvemos a conectar: el cliente envía su sesión anterior
-          socket.connect();
-        }
+      socket.on('connect', actualitzarEstat);
+      socket.on('disconnect', actualitzarEstat);
+
+      // 3. Recepció (registrat una sola vegada, fora de "connect")
+      socket.on('chat:message', (missatge) => {
+        const item = document.createElement('li');
+        item.className = 'list-group-item';
+
+        const hora = document.createElement('small');
+        hora.className = 'text-muted me-2';
+        hora.textContent = new Date(missatge.hora).toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' });
+
+        const autor = document.createElement('strong');
+        autor.className = 'me-2';
+        autor.textContent = missatge.nom + ':';
+
+        const text = document.createElement('span');
+        text.textContent = missatge.text;
+
+        item.appendChild(hora);
+        item.appendChild(autor);
+        item.appendChild(text);
+        missatges.appendChild(item);
+        missatges.scrollTop = missatges.scrollHeight;
       });
 
-      socket.on('connect', () => {
-        toggleButton.innerText = 'Desconectar';
-        if (socket.recovered) {
-          mostrar('Conexión RECUPERADA (id: ' + socket.id + ')', true);
-        } else {
-          mostrar('Conexión NUEVA (id: ' + socket.id + ')', true);
-        }
-      });
-
-      socket.on('disconnect', (reason) => {
-        toggleButton.innerText = 'Conectar';
-        mostrar('Desconectado (motivo: ' + reason + ')', true);
-      });
-
-      socket.on('chat message', (msg) => {
-        mostrar(msg, false);
-      });
-
-      socket.on('user connected', (texto) => {
-        mostrar(texto, true);
-      });
-
-      socket.on('user disconnected', (texto) => {
-        mostrar(texto, true);
-      });
-
+      // 3. Enviament (botó o Enter)
       form.addEventListener('submit', (e) => {
         e.preventDefault();
-        if (input.value) {
-          socket.emit('chat message', input.value);
-          input.value = '';
+
+        if (!socket.connected) {
+          return;
         }
+
+        const text = input.value.trim();
+        if (text.length === 0 || text.length > 500) {
+          return;
+        }
+
+        socket.emit('chat:send', { nom: nom, text: text });
+        input.value = '';
       });
     </script>
   </body>
